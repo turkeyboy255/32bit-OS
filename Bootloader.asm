@@ -1,7 +1,8 @@
 org 0x7C00
 use16
 
-jmp 0x0000:start 
+jmp 0x0000:start ;Some BIOSes would jump to 07C0:0000 which would make CS be 0x07C0.
+
 start:
     cli
     cld
@@ -10,7 +11,7 @@ start:
     mov es, ax
     mov bp, 0x7000
     mov ss, ax
-    mov sp, bp 
+    mov sp, bp ;Load SP right after loading SS
     mov [boot_drive], dl
     mov di, 5
 
@@ -26,7 +27,7 @@ enable_a20:
 
 read_disk:
     mov ah, 0x02
-    mov al, 0x01
+    mov al, 0x20
     mov ch, 0x00
     mov cl, 0x02
     mov dh, 0x00
@@ -41,8 +42,8 @@ read_disk:
     jnz read_disk
     jmp disk_error
 
-CODE_OFFSET equ gdt_code - gdt_start 
-DATA_OFFSET equ gdt_data - gdt_start 
+CODE_OFFSET equ gdt_code - gdt_start ;Also a synonym to 0x08
+DATA_OFFSET equ gdt_data - gdt_start ;Also a synonym to 0x10
 
 read_successfully:
 load_gdt:
