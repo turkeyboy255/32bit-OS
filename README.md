@@ -3,6 +3,6 @@ simple 32bit operating system
 
 Currently only runs in a linux VM or on WSL
 
-Basic terminal with simple ata driver
+Basic terminal with simple ata driver and manual filesystem
 
 QEMU and NASM are required
