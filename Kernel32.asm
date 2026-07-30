@@ -43,7 +43,7 @@ get_inp:
 ; ENTER
 ; ==========================
 enter_key:
-    call clear_screen
+    call newline
     movzx edi,byte [buffer_pos]
     mov byte [buffer+edi],0
 
@@ -113,6 +113,14 @@ command:
     call compare_strings
     cmp edi, 1
     je dir
+    mov edi,clear_cmd
+    call compare_strings
+    cmp edi, 1
+    je clear
+    mov edi,load_cmd
+    call compare_strings
+    cmp edi, 1
+    je load
     ret
 
 ; ==========================
@@ -127,6 +135,9 @@ compare_strings:
 
     cmp al,bl
     jne .done
+
+    cmp al, ' '
+    je .match
 
     cmp al,0
     je .match
@@ -191,7 +202,23 @@ clear_screen:
     mov dword [cursor],0xB8000
     ret
 
+; ==========================
+; NEW LINE
+; ==========================
+newline:
+    mov eax,[cursor]
 
+    ; find current column
+    sub eax,0xB8000
+    xor edx,edx
+    mov ecx,160
+    div ecx          ; eax = row, edx = offset in row
+
+    ; move to next row
+    sub dword [cursor],edx
+    add dword [cursor],160
+
+    ret
 
 ; ==========================
 ; ATA DRIVER
@@ -323,6 +350,7 @@ buffer_pos:
 buffer:
     times 64 db 0
 
+
 ; ==========================
 ; COMMANDS
 ; ==========================
@@ -330,15 +358,22 @@ buffer:
 help_cmd:
     db 'HELP',0
 help_msg:
-    db 'DIR PRINTS DATA FROM SECTOR 20',0
+    db 'CLEAR DIR HELP',0
 dir_cmd:
     db 'DIR',0
+clear_cmd:
+    db 'CLEAR',0
+load_cmd:
+    db 'LOAD '
 
 help:
-    call clear_screen
-
     mov esi,help_msg
     call print_string
+    call newline
+    ret
+
+clear:
+    call clear_screen
     ret
 
 dir:
@@ -367,11 +402,58 @@ print_filetable:
     call print_string
 
     inc ebx
-    mov al, ' '
-    call print_char
     jmp .loop
 
 .done:
+    call newline
+    ret
+
+load:
+    ; load file table
+    mov eax,33
+    mov edi,0x20000
+    call ata_read_sector
+
+
+    mov ebx,[0x20004]    ; number of files
+    xor ecx,ecx          ; entry offset
+
+
+.compare:
+
+    cmp ecx,ebx
+    je .done
+
+
+    ; typed filename
+    mov esi,buffer
+    add esi,5
+
+
+    ; HEFS filename
+    mov edi,0x20008
+    add edi,ecx
+
+
+    call compare_strings
+
+    cmp eax,1
+    je .match
+
+
+    add ecx,32
+    jmp .compare
+
+
+.match:
+    mov al,'H'
+    call print_char
+    jmp start
+
+
+.done:
+    mov al,'N'
+    call print_char
     ret
 
 ; ==========================
