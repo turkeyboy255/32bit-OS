@@ -261,68 +261,46 @@ ata_read_sector:
     push ecx
     push edx
 
-    mov ebx, eax          ; Save LBA
+    mov ebx,eax
 
-    ;-------------------------
-    ; Wait until drive is idle
-    ;-------------------------
-    call ata_wait_busy  ; wait untill the drive is no longer busy
+    call ata_wait_busy
 
-    ;-------------------------
-    ; Sector count = 1
-    ;-------------------------
+    ; sector count
     mov dx,0x1F2
-    mov al,1            ; read one sector
+    mov al,1
     out dx,al
 
-    ; make this work better later
-    ;-------------------------
-    ; LBA bits 0-7
-    ;-------------------------
+    ; LBA 0-7
     mov dx,0x1F3
     mov al,bl
     out dx,al
 
-    ;-------------------------
-    ; LBA bits 8-15
-    ;-------------------------
+    ; LBA 8-15
     mov dx,0x1F4
     mov al,bh
     out dx,al
 
-    ;-------------------------
-    ; LBA bits 16-23
-    ;-------------------------
+    ; LBA 16-23
     shr ebx,16
     mov dx,0x1F5
     mov al,bl
     out dx,al
 
-    ;-------------------------
-    ; Drive / Head register
-    ;-------------------------
-    mov al,bh              ; bits 24-31
-    and al,0x0F            ; keep bits 24-27
-    or  al,0xE0            ; master + LBA mode
-
+    ; LBA 24-27
+    shr ebx,8
     mov dx,0x1F6
+    mov al,bl
+    and al,0x0F
+    or al,0xE0
     out dx,al
 
-    ;-------------------------
-    ; READ SECTORS command
-    ;-------------------------
+    ; read command
     mov dx,0x1F7
     mov al,0x20
     out dx,al
 
-    ;-------------------------
-    ; Wait for data
-    ;-------------------------
     call ata_wait_drq
 
-    ;-------------------------
-    ; Read 512 bytes
-    ;-------------------------
     mov dx,0x1F0
     mov ecx,256
 
@@ -358,7 +336,7 @@ buffer:
 help_cmd:
     db 'HELP',0
 help_msg:
-    db 'CLEAR DIR HELP',0
+    db 'CLEAR DIR HELP LOAD ',0
 dir_cmd:
     db 'DIR',0
 clear_cmd:
@@ -385,6 +363,16 @@ dir:
 
     ret
 
+load:
+    mov eax, 34
+    mov edi,0x30000
+    call ata_read_sector
+    call 0x30000
+    ret
+; ==========================
+; FileTable Helper Commands
+; ==========================
+
 
 print_filetable:
     mov eax,[0x20004]     ; file count
@@ -406,54 +394,6 @@ print_filetable:
 
 .done:
     call newline
-    ret
-
-load:
-    ; load file table
-    mov eax,33
-    mov edi,0x20000
-    call ata_read_sector
-
-
-    mov ebx,[0x20004]    ; number of files
-    xor ecx,ecx          ; entry offset
-
-
-.compare:
-
-    cmp ecx,ebx
-    je .done
-
-
-    ; typed filename
-    mov esi,buffer
-    add esi,5
-
-
-    ; HEFS filename
-    mov edi,0x20008
-    add edi,ecx
-
-
-    call compare_strings
-
-    cmp eax,1
-    je .match
-
-
-    add ecx,32
-    jmp .compare
-
-
-.match:
-    mov al,'H'
-    call print_char
-    jmp start
-
-
-.done:
-    mov al,'N'
-    call print_char
     ret
 
 ; ==========================
