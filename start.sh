@@ -20,6 +20,6 @@ dd if=filetable.bin of=os.img bs=512 seek=33 conv=notrunc
 dd if=hello.bin of=os.img bs=512 seek=34 conv=notrunc
 
 
-dd if=syscall.bin of=os.img bs=512 seek=36 conv=notrunc
+dd if=syscall.bin of=os.img bs=512 seek=35 conv=notrunc
 
 qemu-system-i386 -drive format=raw,file=os.img
