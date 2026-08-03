@@ -2,25 +2,15 @@ filesystem:
 
 db 'HEFS'
 
-dd 4              ; 2 files
-
-
-; ----------------
-; FILE 1
-; ----------------
+dd 5              ; 5 files
 
 db 'BOOTLOADER '
 times 5 db 0   ; filename padding
 
 dd 0            ; starting sector
 dd 512           ; size bytes
-dd 0             ; flags
-dd 0             ; reserved
-
-
-; ----------------
-; FILE 2
-; ----------------
+dd 0             ; flags for file types
+dd 0             ; reserved parent for folders
 
 db 'KERNEL '
 times 9 db 0
@@ -43,6 +33,14 @@ times 5 db 0
 
 dd 34
 dd 512
+dd 0
+dd 0
+
+db 'SYSCALL '
+times 8 db 0
+
+dd 35
+dd 1024
 dd 0
 dd 0
 
