@@ -1,26 +1,18 @@
-org 0x50000
+org 0x30000
 BITS 32
 
 start:
-    mov esi, message
-    mov edi, 0xB8000
-
-.print:
-    lodsb                  ; load next character
-
-    cmp al, 0              ; end of string?
-    je .done
-
-    mov ah, 0x0F           ; white text on black
-    mov [edi], ax
-
-    add edi, 2             ; next VGA character
-    jmp .print
-
-.done:
+    mov word [0xB8000], 0x0F48   ; 'H' (0x48), white on black (0x0F)
+    mov word [0xB8002], 0x0F45   ; 'E' (0x48), white on black (0x0F)
+    mov word [0xB8004], 0x0F4C   ; 'L' (0x48), white on black (0x0F)
+    mov word [0xB8006], 0x0F4C   ; 'L' (0x48), white on black (0x0F)
+    mov word [0xB8008], 0x0F4F   ; 'O' (0x48), white on black (0x0F)
+    mov word [0xB800A], 0x0F20   ; ' ' (0x48), white on black (0x0F)
+    mov word [0xB800C], 0x0F57   ; 'W' (0x48), white on black (0x0F)
+    mov word [0xB800E], 0x0F4F   ; 'O' (0x48), white on black (0x0F)
+    mov word [0xB8010], 0x0F52   ; 'R' (0x48), white on black (0x0F)
+    mov word [0xB8012], 0x0F4C   ; 'L' (0x48), white on black (0x0F)
+    mov word [0xB8014], 0x0F44   ; 'D' (0x48), white on black (0x0F)
     ret
 
-
-message:
-    db 'HELLO WORLD FROM HEFS!',0
 times 512-($-$$) db 0
