@@ -378,30 +378,62 @@ dir:
     mov edi,0x20000
     call ata_read_sector
 
-    call print_filetable
+    call print_files
 
     ret
 
 load:
-    call find_file      ; calls routine to find infornation about the file
+    ; eax = location on disk
+    ; ebx = size in bytes
+
+    call find_file
+
     call malloc
+    ; EDI = allocated memory address
 
 .loadnext:
-    call ata_read_sector; loads sector
-    sub ebx, 512        ; decriments remaining sectors
-    add eax, 1          ; next sector on disk
-    cmp ebx, 0          ; checks for finished routine
+    call ata_read_sector       ; read disk sector -> [EDI]
+
+    add edi, 512               ; destination += 512
+    add eax, 1                 ; next disk sector
+    sub ebx, 512               ; remaining size -= 512
+
+    cmp ebx, 0
     je .done
-    jmp .loadnext       ; repeats
+
+    jmp .loadnext
 
 .done:
-    call 0x30000        ; loads program memory
+    ; program starts at original allocated address
+    call edi                   ; WRONG: EDI now points to end
+
     ret
 
 
 ; ==========================
 ; FileTable Helper Commands
 ; ==========================
+
+print_files: 
+    mov ecx, [0x20004] 
+    ; number of files 
+    mov esi, 0x20008 
+    ; first file entry 
+.next_file: 
+    cmp ecx, 0 
+    je .done 
+    mov ebx, 20
+    sub ecx, 1 
+.next: 
+    ; print string 
+    lodsb 
+    cmp ebx, 0
+    je .next_file 
+    call print_char_screen 
+    sub ebx, 1 
+    jmp .next
+.done: 
+    ret
 
 find_file:
     ; number of files
@@ -454,28 +486,6 @@ find_file:
     mov ebx,[edi+20]       ; file size
     ret
 
-print_filetable:
-    mov eax,[0x20004]     ; file count
-    xor ebx,ebx           ; index
-
-.loop:
-    cmp ebx,eax
-    je .done
-
-    mov esi,0x20008       ; first entry
-    mov edx,ebx
-    imul edx,32           ; entry size
-    add esi,edx
-
-    call print_string
-
-    inc ebx
-    jmp .loop
-
-.done:
-    call newline
-    ret
-
 
 ; ==========================
 ; MEMORY ALLOCATOR
@@ -523,9 +533,6 @@ db 'V'
 db 'B'
 db 'N'
 db 'M'
-
-
-
 
 ; =============================
 ; INTERRUPT DESCRIPTOR TABLE
@@ -580,6 +587,11 @@ init_idt:
 
     ret
 
+
+
+
+
+
 ; ==========================
 ; SYSCALL HANDLER
 ; ==========================
@@ -589,19 +601,15 @@ syscall_handler:
     pusha
 
     cmp eax,1
-    je sys_putchar
-
-    cmp eax,2
-    je sys_print
-
-    cmp eax,3
-    je sys_malloc
+    je sys_printchar
 
     cmp eax,4
     je sys_exit
 
     jmp syscall_done
 
+sys_printchar:
+    ret
 
 ; ==========================
 ; PRINT CHARACTER
@@ -609,10 +617,8 @@ syscall_handler:
 ; ==========================
 
 sys_putchar:
-
     mov al,bl
-    call print_char_screen
-
+    mov ah,0x0F
     jmp syscall_done
 
 
@@ -624,8 +630,12 @@ sys_putchar:
 sys_print:
 
     call print_string
-
     jmp syscall_done
+
+
+; ==========================
+; GET INPUT
+; ==========================
 
 
 ; ==========================
