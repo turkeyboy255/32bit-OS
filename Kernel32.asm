@@ -333,6 +333,121 @@ ata_read_sector:
     pop eax
     ret
 
+; ------------------------------------------------
+; ata_write_sector
+;
+; EAX = LBA sector
+; ESI = address of 512-byte buffer
+; ------------------------------------------------
+
+ata_write_sector:
+
+    ; -------------------------
+    ; Select drive + LBA bits 24-27
+    ; -------------------------
+
+    mov edx, eax
+    shr edx, 24
+    and dl, 0x0F
+    or dl, 0xE0
+
+    mov dx, 0x1F6
+    out dx, al
+
+
+    ; -------------------------
+    ; Sector count = 1
+    ; -------------------------
+
+    mov dx, 0x1F2
+    mov al, 1
+    out dx, al
+
+
+    ; -------------------------
+    ; LBA bits 0-7
+    ; -------------------------
+
+    mov dx, 0x1F3
+    mov eax, eax
+    out dx, al
+
+
+    ; LBA bits 8-15
+    mov dx, 0x1F4
+    shr eax, 8
+    out dx, al
+
+
+    ; LBA bits 16-23
+    mov dx, 0x1F5
+    shr eax, 8
+    out dx, al
+
+
+    ; -------------------------
+    ; WRITE SECTORS
+    ; -------------------------
+
+    mov dx, 0x1F7
+    mov al, 0x30
+    out dx, al
+
+
+    ; -------------------------
+    ; Wait until drive is ready
+    ; -------------------------
+
+.wait:
+
+    in al, dx
+
+    test al, 0x80       ; BSY
+    jnz .wait
+
+    test al, 0x08       ; DRQ
+    jz .wait
+
+
+    ; -------------------------
+    ; Send 512 bytes
+    ; -------------------------
+
+    mov dx, 0x1F0
+    mov ecx, 256
+
+.write:
+
+    mov ax, [esi]
+    out dx, ax
+
+    add esi, 2
+    loop .write
+
+
+    ; -------------------------
+    ; Wait for completion
+    ; -------------------------
+
+    mov dx, 0x1F7
+
+.done:
+
+    in al, dx
+
+    test al, 0x80       ; BSY
+    jnz .done
+
+    test al, 0x01       ; ERR
+    jnz .error
+
+    ret
+
+
+.error:
+    ; Handle ATA error here
+    ret
+
 
 ; ==========================
 ; DATA
@@ -360,6 +475,8 @@ clear_cmd:
     db 'CLEAR',0
 load_cmd:
     db 'LOAD '
+add_cmd:
+    db 'ADD '
 
 
 
@@ -378,63 +495,40 @@ dir:
     mov edi,0x20000
     call ata_read_sector
 
-    call print_files
+    call print_filetable
 
     ret
 
 load:
-    ; eax = location on disk
-    ; ebx = size in bytes
-
-    call find_file
-
+    call find_file      ; calls routine to find infornation about the file
+    cmp eax, 1
+    je .fail
     call malloc
-    ; EDI = allocated memory address
+    mov edi, 0x30000
+    add edi, [allocatedmem]
 
 .loadnext:
-    call ata_read_sector       ; read disk sector -> [EDI]
-
-    add edi, 512               ; destination += 512
-    add eax, 1                 ; next disk sector
-    sub ebx, 512               ; remaining size -= 512
-
-    cmp ebx, 0
+    call ata_read_sector; loads sector
+    sub ebx, 512        ; decriments remaining sectors
+    add eax, 1          ; next sector on disk
+    cmp ebx, 0          ; checks for finished routine
     je .done
-
-    jmp .loadnext
-
+    jmp .loadnext       ; repeats
+.fail:
+    ret
 .done:
-    ; program starts at original allocated address
-    call edi                   ; WRONG: EDI now points to end
-
+    call clear
+    mov eax, 0x30000
+    add eax, [allocatedmem]
+    call eax        ; loads program memory
+    call newline
     ret
 
 
 ; ==========================
 ; FileTable Helper Commands
 ; ==========================
-
-print_files: 
-    mov ecx, [0x20004] 
-    ; number of files 
-    mov esi, 0x20008 
-    ; first file entry 
-.next_file: 
-    cmp ecx, 0 
-    je .done 
-    mov ebx, 20
-    sub ecx, 1 
-.next: 
-    ; print string 
-    lodsb 
-    cmp ebx, 0
-    je .next_file 
-    call print_char_screen 
-    sub ebx, 1 
-    jmp .next
-.done: 
-    ret
-
+  
 find_file:
     ; number of files
     mov eax,[0x20004]
@@ -456,6 +550,7 @@ find_file:
     jne .next_file
 .fail:
     xor eax,eax
+    mov eax, 1
     ret
 .compare_file:
     push esi
@@ -484,6 +579,30 @@ find_file:
     ; EDI points to the matching file entry
     mov eax,[edi+16]       ; starting sector
     mov ebx,[edi+20]       ; file size
+    ret
+
+
+
+print_filetable:
+    mov eax,[0x20004]     ; file count
+    xor ebx,ebx           ; index
+
+.loop:
+    cmp eax,ebx
+    je .done
+
+    mov esi,0x20008       ; first entry
+    mov edx,ebx
+    imul edx,32           ; entry size
+    add esi,edx
+
+    call print_string
+
+    inc ebx
+    jmp .loop
+
+.done:
+    call newline
     ret
 
 
@@ -533,6 +652,9 @@ db 'V'
 db 'B'
 db 'N'
 db 'M'
+
+
+
 
 ; =============================
 ; INTERRUPT DESCRIPTOR TABLE
@@ -587,11 +709,6 @@ init_idt:
 
     ret
 
-
-
-
-
-
 ; ==========================
 ; SYSCALL HANDLER
 ; ==========================
@@ -601,15 +718,19 @@ syscall_handler:
     pusha
 
     cmp eax,1
-    je sys_printchar
+    je sys_putchar
+
+    cmp eax,2
+    je sys_print
+
+    cmp eax,3
+    je sys_malloc
 
     cmp eax,4
     je sys_exit
 
     jmp syscall_done
 
-sys_printchar:
-    ret
 
 ; ==========================
 ; PRINT CHARACTER
@@ -617,8 +738,10 @@ sys_printchar:
 ; ==========================
 
 sys_putchar:
+
     mov al,bl
-    mov ah,0x0F
+    call print_char_screen
+
     jmp syscall_done
 
 
@@ -630,12 +753,8 @@ sys_putchar:
 sys_print:
 
     call print_string
+
     jmp syscall_done
-
-
-; ==========================
-; GET INPUT
-; ==========================
 
 
 ; ==========================
@@ -648,7 +767,6 @@ sys_malloc:
     call malloc
     mov eax,edi
     jmp syscall_done
-
 
 ; ==========================
 ; EXIT PROGRAM
