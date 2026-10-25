@@ -3,6 +3,12 @@ org 0x8200
 
 start:
     ; --------------------------------
+    ; Load file table
+    ; --------------------------------
+    mov eax,73
+    mov edi,0x20000
+    call ata_read_sector
+    ; --------------------------------
     ; Get video information
     ; --------------------------------
     mov eax, [0x5000]
@@ -65,29 +71,74 @@ get_input:
     cmp al, 0x0E
     je .BACK
 
-    ; Look up character sprite by scan code
+    ; Save the scancode as an index
     movzx eax, al
+
+    ; Get the sprite pointer
     mov esi, [scan_table + eax * 4]
 
-    ; Zero means unsupported key
+    ; Ignore unsupported keys
     test esi, esi
     jz get_input
 
+    ; Get the ASCII character for this scancode
+    mov al, [ascii_table + eax]
+
+    ; Store it at commandbuffer[buffer_pos]
+    mov ebx, [buffer_pos]
+    cmp ebx, 127
+    jae get_input
+
+    mov [commandbuffer + ebx], al
+
+    ; Advance buffer position
+    inc ebx
+    mov [buffer_pos], ebx
+
+    ; Null-terminate the string
+    mov byte [commandbuffer + ebx], 0
+
+    ; Draw the character
     jmp .draw
+
 .SPACE:
     mov esi, SPACE
+    mov al, ' '
+
+    mov ebx, [buffer_pos]
+    cmp ebx, 127
+    jae get_input
+
+    mov [commandbuffer + ebx], al
+
+    inc ebx
+    mov [buffer_pos], ebx
+
+    mov byte [commandbuffer + ebx], 0
+
     jmp .draw
 .ENTER:
     mov dword [buffer], 0
     add ecx, 12
+    call command
+
+    mov dword [buffer_pos], 0
+    mov byte [commandbuffer], 0
     jmp get_input
 
 .BACK:
-    cmp dword [buffer], 0
+    cmp byte [buffer_pos], 0
     je get_input
 
+    ; Remove the last character from the command buffer
+    dec byte [buffer_pos]
+    movzx eax, byte [buffer_pos]
+    mov byte [commandbuffer + eax], 0
+
+    ; Move back one character on screen (12 pixels)
     sub dword [buffer], 12
 
+    ; Erase the character with a space
     mov ebx, [buffer]
     mov esi, SPACE
     call draw_sprite_from_si
@@ -172,13 +223,169 @@ scan_table:
     dd 0          ; 38: Alt
     dd SPACE      ; 39: Space
 
+align 4
+
+ascii_table:
+    db 0, 0
+
+    ; 02-0B: 1 through 0
+    db '1','2','3','4','5','6','7','8','9','0'
+
+    ; 0C-0F
+    times 4 db 0
+
+    ; 10-19: Q through P
+    db 'q','w','e','r','t','y','u','i','o','p'
+
+    ; 1A-1D
+    times 4 db 0
+
+    ; 1E-26: A through L
+    db 'a','s','d','f','g','h','j','k','l'
+
+    ; 27-2B
+    times 5 db 0
+
+    ; 2C-32: Z through M
+    db 'z','x','c','v','b','n','m'
+
+    ; 33-38
+    times 6 db 0
+
+    ; 39: Space
+    db ' '
+
+; ============================================================
+; command
+; ============================================================
+
+command:
+    ; HELP
+    mov edi, help_cmd
+    call compare_strings
+    cmp eax, 1
+    je help
+
+    ; DIR
+    mov edi, dir_cmd
+    call compare_strings
+    cmp eax, 1
+    je dir
+
+    ; CLEAR
+    mov edi, clear_cmd
+    call compare_strings
+    cmp eax, 1
+    je clear
+
+    ; LOAD filename
+    mov edi, load_cmd
+    call compare_prefix
+    cmp eax, 1
+    je load
+
+    ret
 
 
+; ============================================================
+; compare_strings
+; EDI = expected string
+; EAX = 1 if equal, 0 otherwise
+; ============================================================
+
+compare_strings:
+    push esi
+    push ebx
+
+    mov esi, commandbuffer
+
+.loop:
+    mov al, [esi]
+    mov bl, [edi]
+
+    cmp al, bl
+    jne .different
+
+    test al, al
+    jz .equal
+
+    inc esi
+    inc edi
+    jmp .loop
+
+.equal:
+    mov eax, 1
+    jmp .done
+
+.different:
+    xor eax, eax
+
+.done:
+    pop ebx
+    pop esi
+    ret
 
 
+; ============================================================
+; compare_prefix
+; EDI = expected prefix
+; EAX = 1 if commandbuffer starts with prefix
+; ============================================================
+
+compare_prefix:
+    push esi
+    push ebx
+
+    mov esi, commandbuffer
+
+.loop:
+    mov bl, [edi]
+
+    ; Reached end of prefix
+    test bl, bl
+    jz .equal
+
+    mov al, [esi]
+    cmp al, bl
+    jne .different
+
+    ; Input ended before prefix
+    test al, al
+    jz .different
+
+    inc esi
+    inc edi
+    jmp .loop
+
+.equal:
+    mov eax, 1
+    jmp .done
+
+.different:
+    xor eax, eax
+
+.done:
+    pop ebx
+    pop esi
+    ret
+
+
+; ============================================================
+; Command strings -- lowercase to match keyboard input
+; ============================================================
+
+help_cmd  db 'help', 0
+dir_cmd   db 'dir', 0
+clear_cmd db 'clear', 0
+load_cmd  db 'load ', 0
+add_cmd   db 'add ', 0
 
 buffer dd 0
-command db 0
+
+commandbuffer times 128 db 0
+buffer_pos dd 0
+
+
 ; ============================================================
 ; draw_sprite_from_si
 ;
@@ -310,6 +517,7 @@ place_pixel:
 ; ===================
 %include "fonts.asm"
 %include "atadrivers.asm"
+%include "filesystem.asm"
 ; ============================================================
 ; Variables
 ; ============================================================
